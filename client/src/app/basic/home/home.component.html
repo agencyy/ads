@@ -1,0 +1,25 @@
+
+
+
+<md-input-container class="example-full-width">
+  <input mdInput placeholder="Email" [(ngModel)]="email">
+</md-input-container><br>
+<md-input-container class="example-full-width">
+  <input mdInput placeholder="Password" [(ngModel)]="password">
+</md-input-container>
+
+<button type="button" md-button (click)="onLogin()">
+  Login 
+</button>
+
+<button type="button" md-button (click)="onSign()">
+  Sign In
+</button>
+
+<button type="button" md-button (click)="onTestAuth()">
+  Test Auth
+</button>
+
+<button type="button" md-button (click)="onFacebook()">
+  Facebook Login
+</button>
