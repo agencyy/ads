@@ -90,7 +90,6 @@ class AuthController extends Controller
             $serviceUser = Socialite::driver($service)->user();
         }
 
-        dd($serviceUser);
         $user = $this->getExistingUser($serviceUser, $service);
         if(!$user){
             $flow = "registered";
