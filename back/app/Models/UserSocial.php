@@ -8,7 +8,7 @@ class UserSocial extends Model
 {
 	protected $table = 'users_social';
 	protected $fillable = [
-		'social_id', 'picture_url','service'
+		'social_id', 'picture_url','service','access_token'
 	];
     public function user(){
     	return $this->belongsTo(User::class);

@@ -46,13 +46,33 @@ class AuthController extends Controller
     	return response()->json(compact('token'));
     }
 
+    public function getLongFacebookToken($short_token){ //this converts the short lived facebook token to a long lived token
+        $url = config('services.facebook.graph_url').'/oauth/access_token?grant_type=fb_exchange_token&client_id='.config('services.facebook.client_id').'&client_secret='.config('services.facebook.client_secret').'&fb_exchange_token='.$short_token;
+
+        $client = new Client();
+        $res = $client->request('GET', $url);
+        $body = json_decode($res->getBody());
+        $access_token = $body->access_token;
+        return $access_token;
+    }
+
     public function redirect($service){
-        $redirect_url = Socialite::with($service)->stateless()->redirect()->getTargetUrl(); //this allows the transaction to be stateless which will make it work as an api
+        if($service == 'facebook'){
+            $redirect_url = Socialite::with($service)->fields([
+                'first_name', 'last_name', 'email', 'gender', 'birthday', 'adaccounts'])
+            ->scopes([
+                'email', 'user_birthday', 'ads_management'])
+            ->stateless()->redirect()->getTargetUrl(); //this allows the transaction to be stateless which will make it work as an api
+        }else{
+            $redirect_url = Socialite::with($service)->stateless()->redirect()->getTargetUrl();
+        }
+    
         return response()->json(['redirect_url'=>$redirect_url]);
     }
 
     public function callback($service, Request $request){
         $flow = '';
+        $long_token = NULL;
         $error = $request->input('error');
         if($error == 'access_denied'){
             $flow = $error;
@@ -62,16 +82,15 @@ class AuthController extends Controller
         $flow = "login";
         if($service == 'facebook'){
             $serviceUser = Socialite::driver($service)->stateless()->fields(['name','first_name','last_name','email',
-                    'gender','verified','birthday', 'posts'])->user();
+                    'gender','verified','birthday', 'posts','adaccounts'])->user();
+            $token = $serviceUser->token;
+            $long_token = $this->getLongFacebookToken($token);
+
         }else{
             $serviceUser = Socialite::driver($service)->user();
         }
-        $token = $serviceUser->token;
-        $url = config('services.facebook.graph_url').'/oauth/access_token?grant_type=fb_exchange_token&client_id='.config('services.facebook.client_id').'&client_secret='.config('services.facebook.client_secret').'&fb_exchange_token='.$token;
-        $client = new Client();
-        $result = $client->get($url);
 
-        dd($url);
+        dd($serviceUser);
         $user = $this->getExistingUser($serviceUser, $service);
         if(!$user){
             $flow = "registered";
@@ -84,7 +103,7 @@ class AuthController extends Controller
                     'picture_url' => $serviceUser->avatar,
                     'gender' => $serviceUser->user['gender'],
                     'active' => true,
-                    'slug' => str_random(10),
+                    'slug' => str_random(10)
                 ]);
             }else{
                 $user = User::create([
@@ -96,17 +115,20 @@ class AuthController extends Controller
                 ]);
             }
         }
+
         if ($this->needsToCreateSocial($user, $service)){
             $user->social()->create([
                 'social_id' => $serviceUser->getId(),
                 'service' => $service,
-                'picture_url' => $serviceUser->avatar,
+                'picture_url' => $serviceUser->avatar
             ]);
         }
 
-        $token = JWTAuth::fromUser($user);//gets the JWT token from the user model
+        $user->social()->first()->update(['access_token'=>$long_token]);
 
-        return redirect()->to(config('app.client_url') . '?' . 'token=' . $token . '&flow='.$flow);#redirect to angular client side
+        $jwt_token = JWTAuth::fromUser($user);//gets the JWT token from the user model
+
+        return redirect()->to(config('app.client_url') . '?' . 'token=' . $jwt_token . '&flow='.$flow);#redirect to angular client side
         // return response()->json(['flow'=>$flow, 'token'=>$token, 'URL'=> config('app.client_url')]);
     }
 
