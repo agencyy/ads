@@ -18,6 +18,7 @@ class CreateUserSocialsTable extends Migration
             $table->integer('user_id')->unsigned();
             $table->string('social_id');
             $table->string('picture_url')->nullable();
+            $table->string('access_token')->nullable();
             $table->string('service');
             $table->timestamps();
 

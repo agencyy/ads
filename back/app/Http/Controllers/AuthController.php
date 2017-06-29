@@ -7,6 +7,8 @@ use App\Models\User;
 use JWTAuth;
 use Carbon\Carbon;
 use Socialite;
+use GuzzleHttp\Exception\GuzzleException;
+use GuzzleHttp\Client;
 
 class AuthController extends Controller
 {
@@ -50,14 +52,26 @@ class AuthController extends Controller
     }
 
     public function callback($service, Request $request){
+        $flow = '';
+        $error = $request->input('error');
+        if($error == 'access_denied'){
+            $flow = $error;
+             return redirect()->to(config('app.client_url') . '?' . 'flow='.$flow);#redirect to angular 
+        }
+
         $flow = "login";
         if($service == 'facebook'){
             $serviceUser = Socialite::driver($service)->stateless()->fields(['name','first_name','last_name','email',
-                    'gender','verified'])->user();
+                    'gender','verified','birthday', 'posts'])->user();
         }else{
             $serviceUser = Socialite::driver($service)->user();
         }
+        $token = $serviceUser->token;
+        $url = config('services.facebook.graph_url').'/oauth/access_token?grant_type=fb_exchange_token&client_id='.config('services.facebook.client_id').'&client_secret='.config('services.facebook.client_secret').'&fb_exchange_token='.$token;
+        $client = new Client();
+        $result = $client->get($url);
 
+        dd($url);
         $user = $this->getExistingUser($serviceUser, $service);
         if(!$user){
             $flow = "registered";
