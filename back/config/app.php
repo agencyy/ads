@@ -234,6 +234,9 @@ return [
         'JWTAuth' => Tymon\JWTAuth\Facades\JWTAuth::class,
         'Fractal' => Spatie\Fractal\FractalFacade::class,
         'Socialite' => Laravel\Socialite\Facades\Socialite::class,
+
+        //Custom made
+        'Facebook' => App\Facades\Facebook::class,
     ],
 
 ];

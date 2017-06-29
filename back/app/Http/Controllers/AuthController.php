@@ -4,12 +4,13 @@ namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
 use App\Models\User;
+use App\Models\AdAccounts;
 use JWTAuth;
 use Carbon\Carbon;
 use Socialite;
 use GuzzleHttp\Exception\GuzzleException;
 use GuzzleHttp\Client;
-
+use Facebook;
 class AuthController extends Controller
 {
     public function signup(Request $request){
@@ -46,22 +47,12 @@ class AuthController extends Controller
     	return response()->json(compact('token'));
     }
 
-    public function getLongFacebookToken($short_token){ //this converts the short lived facebook token to a long lived token
-        $url = config('services.facebook.graph_url').'/oauth/access_token?grant_type=fb_exchange_token&client_id='.config('services.facebook.client_id').'&client_secret='.config('services.facebook.client_secret').'&fb_exchange_token='.$short_token;
-
-        $client = new Client();
-        $res = $client->request('GET', $url);
-        $body = json_decode($res->getBody());
-        $access_token = $body->access_token;
-        return $access_token;
-    }
-
     public function redirect($service){
         if($service == 'facebook'){
             $redirect_url = Socialite::with($service)->fields([
-                'first_name', 'last_name', 'email', 'gender', 'birthday', 'adaccounts'])
+                'first_name', 'last_name', 'email', 'gender', 'birthday', 'adaccounts', 'businesses'])
             ->scopes([
-                'email', 'user_birthday', 'ads_management'])
+                'email', 'user_birthday', 'ads_management', 'business_management'])
             ->stateless()->redirect()->getTargetUrl(); //this allows the transaction to be stateless which will make it work as an api
         }else{
             $redirect_url = Socialite::with($service)->stateless()->redirect()->getTargetUrl();
@@ -82,14 +73,12 @@ class AuthController extends Controller
         $flow = "login";
         if($service == 'facebook'){
             $serviceUser = Socialite::driver($service)->stateless()->fields(['name','first_name','last_name','email',
-                    'gender','verified','birthday', 'posts','adaccounts'])->user();
+                    'gender','verified','birthday', 'posts','adaccounts', 'businesses'])->user();
             $token = $serviceUser->token;
-            $long_token = $this->getLongFacebookToken($token);
-
+            $long_token = Facebook::getLongFacebookToken($token);
         }else{
             $serviceUser = Socialite::driver($service)->user();
         }
-
         $user = $this->getExistingUser($serviceUser, $service);
         if(!$user){
             $flow = "registered";
@@ -125,7 +114,33 @@ class AuthController extends Controller
 
         $user->social()->first()->update(['access_token'=>$long_token]);
 
-        $jwt_token = JWTAuth::fromUser($user);//gets the JWT token from the user model
+        //ad accounts
+        $ad_accounts = Facebook::getAdAccountsArray($serviceUser);
+        foreach($ad_accounts as $ad_account){
+            $account_id = $ad_account['account_id'];
+            if ($this->needsToCreateAdAccount($user, $account_id)){
+                $user->adAccount()->create([
+                    'ad_account_id' => $account_id,
+                    'service'=>$service,
+                ]);
+            }
+        }
+
+        //Bussiness Accounts
+        $businesses = Facebook::getBusinessesArray($serviceUser);
+        foreach($businesses as $business){
+            $name = $business['name'];
+            $business_id = $business['id'];
+            if ($this->needsToCreateBusiness($user, $account_id)){
+                $user->business()->create([
+                    'business_id' => $business_id,
+                    'name'=>$name,
+                    'service'=>$service,
+                ]);
+            }
+        }
+
+        $jwt_token = JWTAuth::fromUser($user);//gets the JWT token from the user model json web token for authenticating on the front end
 
         return redirect()->to(config('app.client_url') . '?' . 'token=' . $jwt_token . '&flow='.$flow);#redirect to angular client side
         // return response()->json(['flow'=>$flow, 'token'=>$token, 'URL'=> config('app.client_url')]);
@@ -133,6 +148,14 @@ class AuthController extends Controller
 
     protected function needsToCreateSocial($user, $service){
         return !$user->hasSocialLinked($service);
+    }
+
+    protected function needsToCreateAdAccount($user, $ad_account_id){
+        return !$user->hasAdAccountLinked($ad_account_id);
+    }
+
+    protected function needsToCreateBusiness($user, $business_id){
+        return !$user->hasBusinessLinked($business_id);
     }
 
     public function getExistingUser($serviceUser, $service){
